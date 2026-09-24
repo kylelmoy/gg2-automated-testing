@@ -78,6 +78,20 @@ node repro.js <repro.js> --repo <built checkout>     run against an existing bui
 Each result directory holds `report.md`, `result.json`, and a `run<N>/` folder
 for every run with every game's bridge and launcher logs.
 
+**Running several at once.** Runs share nothing if each gets its own cache,
+bridge ports and hosting port:
+
+```bash
+GG2_TEST_CACHE=.cache/slot1 node repro.js a.js --port 19100 --hosting-port 8400
+GG2_TEST_CACHE=.cache/slot2 node repro.js b.js --port 19200 --hosting-port 8410
+```
+
+A cache holds one build per commit, and a session stops every game in its
+build directory when it starts, so two runs in the same cache would stop each
+other's games. Game Maker builds are serialized across the machine by a lock
+in `lib/build.js`, because a second IDE can find the first one's temp folder
+and stop on a dialog nobody can answer.
+
 **Exit codes:**
 - With `--broken`/`--fixed`: `0` means the fix is proven.
 - With `--ref`: `0` means every ref reproduced the bug.
