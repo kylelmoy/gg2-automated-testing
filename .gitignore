@@ -1,0 +1,15 @@
+node_modules/
+.cache/
+*.log
+
+# Third-party binaries - see README.md, "Setup"
+vendor/*.exe
+vendor/*.jar
+
+# Session handoffs and scratch notes
+.claude/
+
+# Your own repros and notes stay local; only the example is tracked
+repros/*
+!repros/example.js
+investigations/

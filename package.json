@@ -1,0 +1,12 @@
+{
+  "name": "gg2-automated-testing",
+  "version": "0.1.0",
+  "description": "Reproduce Gang Garrison 2 bugs from a script, and prove fixes against the commit before and after",
+  "private": true,
+  "scripts": {
+    "test": "node test/selftest.js"
+  },
+  "dependencies": {
+    "koffi": "^3.1.5"
+  }
+}

@@ -1,0 +1,192 @@
+# From issue to regression test
+
+How a repro script moves from a GitHub issue to a proven fix and then into a
+permanent regression test. This file covers the process around the harness,
+not the harness itself. For how to run one, see `repro.js --help`. For how to
+write one, see `docs/WRITING-REPROS.md`.
+
+Each section says whether it describes something that **exists** in this repo
+today or something **proposed**.
+
+## The flow
+
+```
+issue filed ─► repro written ─► REPRODUCED on master ─► fix PR ─► fix proven ─► kept as a regression test
+               (triager)         (the bug is real)               (--broken/--fixed)  (nightly + every PR)
+```
+
+### 1. A repro asserts the correct behaviour (exists)
+
+`expect` states what *should* happen, and a failed expectation means the bug
+happened. So one unchanged file serves as the repro, the proof of a fix, and
+the regression test:
+
+| verdict        | meaning                                                          |
+|----------------|------------------------------------------------------------------|
+| `REPRODUCED`   | an `expect` failed, or a built-in check tripped                  |
+| `PASS`         | setup and check completed and every expectation held             |
+| `INCONCLUSIVE` | the run never got as far as the question: an `assume` failed, setup threw, a probe or hook is missing from this build, or the session never came up |
+
+`INCONCLUSIVE` must never count as a pass. Without that rule, a repro could
+"prove" a fix it never exercised. `report.proof()` enforces this: the fixed ref
+has to pass every run.
+
+`assume` is for preconditions: "client1 is player 1", "the balance moved
+someone". Use it for anything that has to be true for the check to mean
+anything. Without it, a repro that silently drifts out of its scenario on a
+later commit reads as `PASS`.
+
+### 2. The repro goes in the issue (proposed)
+
+A repro is a single CommonJS module, so the issue carries it as a fenced block
+tagged `repro`:
+
+````
+```js repro
+// #65 - the autobalance notice on the host names the wrong player.
+module.exports = {
+  issue: 65,
+  title: '...',
+  session: { clients: 2, map: 'ctf_truefort' },
+  async setup({ server, assume }) { ... },
+  async check({ server, expect, assume }) { ... },
+};
+```
+````
+
+GitHub still highlights `js repro` as JavaScript, and the `repro` word lets a
+tool find the block without guessing. Add a section to the issue template:
+"Repro script (optional) — paste a `js repro` block".
+
+Most people who report bugs won't write one, and they shouldn't have to. In
+practice a triager writes the repro from the issue text; an agent can draft it.
+The reporter's job stays the same: describe what happened.
+
+Before scripts are shared widely, repros should declare which harness API
+version they were written against (for example `harness: 1`). Committed repros
+will outlive changes to the API, so an old one must fail loudly as
+`INCONCLUSIVE` and never be reinterpreted.
+
+### 3. A maintainer asks a bot to confirm it (proposed)
+
+A GitHub Action on `issue_comment`:
+
+1. runs only when someone with write access comments `/repro`
+2. extracts the `js repro` block from the issue body, or from the comment
+3. runs `node repro.js <file> --ref master`
+4. posts `report.md` back as a comment. `report.js` already writes Markdown
+   meant for pasting into an issue as-is.
+5. labels the issue `repro-confirmed` on `REPRODUCED`
+
+**A repro is remote code execution, by design.** `server.eval` runs arbitrary
+GML in the game, and the repro file itself is arbitrary Node. So:
+
+- Never trigger on `issues: opened`, or on comments from people without write
+  access. A maintainer reads the script before typing `/repro`.
+- Run it in the testing fork (see step 5), which holds no secrets and no token
+  that can write to upstream. Posting the result back upstream happens in a
+  separate step, with a token that can only comment.
+- Use a runner that can be thrown away.
+
+**The runner needs a real desktop.** GM8 won't run properly without an
+interactive, connected Windows session. It is not yet known whether GitHub's
+hosted `windows-latest` runners provide one. Test that first. If they don't,
+use a self-hosted runner that stays logged on. A disconnected RDP session looks
+exactly like a broken build.
+
+### 4. The fix PR proves itself (exists)
+
+```
+node repro.js repros/65-autobalance-notice-name.js --broken master --fixed my-fix-branch --runs 5
+```
+
+The report shows both sides: `REPRODUCED` on the base, `PASS` on the fix.
+Paste it into the PR description. Seeing the change from REPRODUCED to PASS is
+worth more to a reviewer than a single green check, because it shows the test
+could fail at all.
+
+The repro is named `<issue>-<slug>.js`. This repo does not track repros (only
+`repros/example.js`), so where the kept ones live is part of step 5.
+
+### 5. The corpus runs on its own (proposed)
+
+Upstream may never want test infrastructure in the game repo, and it doesn't
+need to, and the corpus need not live in this repo either. This repo already
+builds any commit in its own cache (`lib/checkout.js`) without touching the
+source checkout. So:
+
+- **Nightly:** run every repro in the corpus against upstream `master`. Every
+  committed repro should be `PASS`. If one turns `REPRODUCED`, that's a
+  regression, and the report names it.
+- **On demand:** a `workflow_dispatch` that takes an upstream PR ref and runs
+  the corpus against it. A maintainer triggers it and posts the report on the
+  PR.
+- **A repro for an unfixed bug** can be committed before its fix, marked as
+  expected to reproduce (proposed field: `open: true`). The nightly run then
+  flags it when it *starts passing*, which tells you a bug was fixed by
+  accident. That's pytest's `xfail` with strict mode.
+
+### 6. Bisect (proposed)
+
+`git bisect run` needs exit 0 for good, 1 for bad, and 125 for "can't test this
+commit, skip it". Those map directly onto the verdicts:
+
+| verdict        | bisect exit |
+|----------------|-------------|
+| `PASS`         | 0 (good)    |
+| `REPRODUCED`   | 1 (bad)     |
+| `INCONCLUSIVE` | 125 (skip)  |
+
+`repro.js`'s own exit codes answer a different question, "did every ref
+reproduce?", so this needs a small `--bisect` mode or wrapper that runs one ref
+and returns the codes above:
+
+```
+cd ../Gang-Garrison-2
+git bisect start <bad> <good>
+git bisect run node ../gg2-automated-testing/repro.js repros/NNN.js --bisect --ref HEAD
+```
+
+Because a probe or hook that doesn't apply to a commit already makes the run
+`INCONCLUSIVE`, bisect skips old commits the repro can't reach. It doesn't
+blame them. A build takes about a minute and builds are cached by commit, so a
+bisect over a few hundred commits costs roughly ten builds.
+
+## Keeping repros trustworthy
+
+- **Timing-dependent bugs get `--runs N` and a ratio.** "Reproduced 7/20" is
+  an honest result. A single-run pass on a flaky bug is not. A fix is proven
+  only when the broken side reproduces at least once and the fixed side passes
+  every run, so use enough runs on the fixed side to mean it.
+- **Set the state directly; don't play your way to it.** Where the game won't
+  allow a state through normal play (a client can't join the bigger team, for
+  example), set it on the server with `eval`. Then drive the behaviour under
+  test through the game's own code, the way #65 calls `ServerBalanceTeams`
+  itself. Repros stay deterministic, and they still test the real code path.
+- **Assert on game state, not pixels.** Check names, teams, HP, positions and
+  counts. Screenshots are evidence for the report, never the verdict.
+- **Keep the built-in checks on.** `gmlError`, `desync` and `clientExit` run
+  on every repro, so a repro for one bug also catches crashes it causes. Use
+  `allow: [...]` only when the setup triggers an unrelated error on purpose,
+  and say why in a comment.
+
+## Later
+
+- **Record-to-repro.** Log a player's per-frame inputs while they reproduce a
+  bug by hand, and emit a skeleton repro that replays them. Someone then adds
+  the `expect` by hand. This is Dolphin's FIFO-log approach. It lets people
+  who report bugs contribute a repro without writing code, and it's the
+  biggest single way to get more people using this.
+- **Released binaries.** Repros currently need source to build from, because
+  the bridge is injected into the tree. The game also loads `Plugins\*.gml` at
+  startup (`loadplugins.gml`). If the bridge could load as a plugin instead, a
+  repro could run against unmodified release `.exe`s. That would mean
+  bisecting across releases without building anything. The catch: a plugin
+  can't place hooks inside game scripts, so only repros that need no hooks
+  would work this way.
+
+## Labels
+
+`needs-repro` → `repro-confirmed` (REPRODUCED on master) → fix merged with a
+proof in the PR → repro kept in the corpus. Add `repro-flaky` for
+ratio-only bugs, so they're watched rather than blocking anything.

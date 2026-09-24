@@ -1,0 +1,165 @@
+// Sets up the agent bridge. Called from AgentBridge's Create event.
+//
+// The bridge configures itself here rather than in game_init, so injecting it
+// into a clean checkout only has to add a single line to the game's startup.
+// Without -agent the instance simply stays dormant: listener is left at -1 and
+// agentBridgeStep exits on its first line.
+
+listener = -1;
+sock = -1;
+readState = 0;  // 0 = waiting for the 4 byte length header, 1 = waiting for the payload
+msgLen = 0;
+
+// No sprite, so this costs nothing - it is what lets AgentBridge's own Draw event fire
+// at all (GM8 skips Draw for an invisible instance regardless of what code is in it).
+// agentBridgeDraw's in-world labels need it; kept enabled since it costs nothing while
+// they are off and nothing else assumes it is off.
+visible = true;
+depth = -1000000;
+
+// The in-world diagnostic labels agentBridgeDraw paints above every Character. On by
+// default, because the only builds that have this code at all are the ones the bridge
+// was injected into and a playtest is what they are for. F11 turns it off live
+// (agentBridgeStep) - a firefight is exactly when a wall of text is most in the way.
+global.agentLabels = true;
+
+// HUD suppression for screenshots: off until an EVAL turns it on. See
+// agentBridgeHudVisible and agentBridgeShot.
+global.agentHideHud = false;
+
+// SPEED's boost factor: 1 = normal. See agentBridgeSpeed.
+global.agentSpeedFactor = 1;
+
+// The debug-logging call sites inject.js patches into the game's own code -
+// agentDebugProtocolError, agentDebugDesync and agentDebugSpriteError - read
+// these, so they are set here where every build that has the payload at all
+// runs them, and before the -agent check below: a build launched with no bridge
+// still logs.
+//
+// agentFailFast turns a detected desync's prompt into an abort. Off by default:
+// a stock client offers Restart/Quit, and a repro that wants to observe what
+// happens after a desync needs that. -agentfailfast (below) turns it on from
+// the first frame; the runner starts every game with it, because a Restart
+// would replace the process it is watching.
+global.agentFailFast = false;
+global.agentDeclaredPlayers = -1;
+
+// Code a repro has armed at a named hook site - see agentHook. Name -> GML.
+global.agentHooks = ds_map_create();
+global.agentHookSeen = ds_map_create();
+global.agentHookOutcome = "";
+
+// The soak-testing switches, here for the same reason as the two above: the call
+// sites inject.js patches into the game's own code read them, and
+// RateController's Begin Step runs in every build whether or not a bridge was
+// asked for. Each one is off, and off means observationally identical to stock.
+//
+// agentRate   room_speed to force, 0 = leave RateController's own value alone.
+//             agentRoomSpeed says why this is a patched line rather than
+//             agentBridgeSpeed's deactivation.
+// agentSnap   collect prediction-snap statistics - agentSnapBegin.
+// agentSoak   keep an unattended run alive - agentSoakTick.
+global.agentRate = 0;
+global.agentSnap = false;
+global.agentSoak = false;
+global.agentAudioOk = false;
+
+agentSnapReset();
+
+// A request that cannot be answered in the frame it arrives - STEP counts frames
+// down, WAIT re-tests an expression - leaves deferKind set, and agentBridgeDefer
+// sends the reply later.
+deferKind = 0;      // 0 = nothing pending, 1 = stepping, 2 = waiting
+deferExpr = "";
+deferFrames = 0;
+deferTotal = 0;
+deferWaitOutcome = "";  // sentinel agentBridgeDefer uses to tell a raised WAIT
+                        // expression apart from one that merely evaluated false
+
+// "#<id> " for a request that carried an id, "" for one that did not. Set once
+// per request by agentBridgeStep and prepended to the reply by agentBridgeSend.
+replyPrefix = "";
+
+// The deferred request's own prefix, kept separately from replyPrefix.
+//
+// This is not tidiness. replyPrefix used to survive a defer by accident: the
+// bridge read nothing while one was outstanding, so nothing overwrote it before
+// agentBridgeDefer sent the reply frames later. Reading during a defer - which
+// is the whole point of the queue below - overwrites it with the next request's
+// id, and the deferred reply would then come back tagged as the answer to some
+// other call. That is worse than not answering: the client matches by id, so it
+// would hand a STEP's result to whoever asked the question after it.
+deferPrefix = "";
+
+// Requests that arrived while a reply was deferred, in arrival order, as two
+// parallel lists (GM8 has no structs).
+//
+// They are held rather than run because a deferred STEP has the world RUNNING -
+// STEP activates every instance and re-deactivates on completion - so anything
+// executed in that window changes what the STEP measures, and touches a world
+// the caller believes is stopped. They are dispatched the moment the deferred
+// reply goes out. CANCEL is the one verb that jumps this queue, since being
+// answerable mid-defer is its entire purpose.
+queuedPrefix = ds_list_create();
+queuedBody = ds_list_create();
+
+// The world is frozen by deactivating every instance except this one, so the
+// game stops advancing between agent calls while the bridge keeps answering.
+frozen = false;
+
+// True exactly while instance_deactivate_all(true) is in effect - unlike
+// "frozen", which stays true for the whole span of a STEP even though STEP
+// reactivates every instance for the frames it is actually running. A
+// deactivated instance's fields are unreachable from anywhere, so this is
+// what agentBridgeWatchTick gates sampling on, not "frozen" itself - sampling
+// during a STEP's own active frames is exactly the combination worth having.
+instancesDeactivated = false;
+
+// Held movement input for INPUT press/release, PlayerControl.Begin Step OR's
+// this into its own keybyte - see agentBridgeInput. keyboard_key_press does
+// not make keyboard_check true (verified on 2026-08-19: it only affects the
+// _pressed/_released edge, not the held state), so a key that must be held
+// rather than tapped cannot be driven through the keyboard at all.
+heldMask = 0;
+
+// Expressions sampled once a frame; a changed value is written to the log.
+watchExpr = ds_list_create();
+watchLast = ds_list_create();
+watchLabel = ds_list_create();
+
+// True from the frame sampling is skipped for lack of readable instances to
+// the frame it resumes - logged exactly on those two edges (see
+// agentBridgeWatchTick), not every frame in between.
+watchSuspended = false;
+
+global.agentEnabled = false;
+global.agentPort = 17777;
+
+var i;
+for (i = 1; i <= parameter_count(); i += 1)
+{
+    if (parameter_string(i) == "-agent")
+        global.agentEnabled = true;
+    else if (parameter_string(i) == "-agentport")
+        global.agentPort = real(parameter_string(i+1));
+    else if (parameter_string(i) == "-agentfailfast")
+        global.agentFailFast = true;
+}
+
+// One log per port, so two instances of the game in one directory - a dedicated
+// server and its clients - do not interleave their logs into one file.
+global.agentLogFile = working_directory + "\agent_bridge_" + string(global.agentPort) + ".log";
+
+if (!global.agentEnabled)
+    exit;
+
+listener = tcp_listen(global.agentPort);
+if (socket_has_error(listener))
+{
+    agentBridgeLog("FATAL could not listen on port " + string(global.agentPort) + ": " + socket_error(listener));
+    socket_destroy(listener);
+    listener = -1;
+    exit;
+}
+
+agentBridgeLog("listening on port " + string(global.agentPort));
