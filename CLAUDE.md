@@ -11,10 +11,10 @@ Read `README.md` for what this is, and `docs/WRITING-REPROS.md` before writing a
 - **Only `repros/example.js` is tracked.** Other repros and investigation notes
   live in `repros/` and `investigations/` locally and are gitignored.
 - **A payload change invalidates every cached build** (the cache key hashes
-  `payload/`, `lib/payload.js` and `lib/inject.js`), so the next run of each
-  commit takes about a minute longer.
-- **Payload `.gml` must be plain ASCII.** gmksplit writes windows-1252 and
-  replaces anything else; the selftest checks this.
+  `payload/`, `lib/payload.js`, `lib/inject.js` and the gm8-builder version), so
+  the next run of each commit rebuilds it.
+- **Payload `.gml` must be plain ASCII.** GM8 stores code a byte per
+  character and gm8-builder replaces anything else; the selftest checks this.
 - **Never report PASS for a run that did not ask the question.** That is what
   INCONCLUSIVE is for, and what `assume` is for in a repro. A missing probe, an
   unplaced hook, a setup failure or an error in hook code must never turn into

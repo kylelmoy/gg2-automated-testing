@@ -65,7 +65,7 @@ section('payload');
   for (const fn of called) check(`${fn}, called from a patched line, is a payload script`, registered.includes(fn));
   for (const p of spec.CODE_PATCHES) check(`${p.file.join('/')} belongs to a known probe`, p.probe in spec.PROBES);
 
-  // gmksplit writes the tree out as windows-1252 and replaces what it cannot.
+  // GM8 stores code a byte per character; gm8-builder replaces what does not fit.
   for (const f of files) {
     const text = fs.readFileSync(path.join(dir, `${f}.gml`), 'utf8');
     check(`${f}.gml is plain ASCII`, !/[^\x00-\x7f]/.test(text));

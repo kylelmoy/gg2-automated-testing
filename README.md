@@ -37,10 +37,10 @@ Markdown report that can be pasted into the issue or the PR.
      treated as an error. This matters because the code moves: before #203
      there is no `clientProtocolError`, so the `desync` probe uses the older
      sites instead.
-3. **Build.** The tree is built without anyone at the keyboard.
-   `lib/gm8directbuild.js` runs Game Maker 8 on a desktop that is never
-   displayed and calls the routine behind *File > Create Executable*. This
-   takes about 10s. The result is cached per commit, hook set and payload.
+3. **Build.** [gm8-builder](https://github.com/kylelmoy/gm8-builder) packs
+   the tree straight into an executable, with gm8x_fix's patches, and no Game
+   Maker process. This takes a few seconds. The result is cached per commit,
+   hook set, payload and gm8-builder version.
 4. **Run.** For each run, the runner starts a fresh dedicated server and
    clients from that build, on their own ports. Then it:
    - waits for the clients to join;
@@ -88,9 +88,7 @@ GG2_TEST_CACHE=.cache/slot2 node repro.js b.js --port 19200 --hosting-port 8410
 
 A cache holds one build per commit, and a session stops every game in its
 build directory when it starts, so two runs in the same cache would stop each
-other's games. Game Maker builds are serialized across the machine by a lock
-in `lib/build.js`, because a second IDE can find the first one's temp folder
-and stop on a dialog nobody can answer.
+other's games.
 
 **Exit codes:**
 - With `--broken`/`--fixed`: `0` means the fix is proven.
@@ -105,7 +103,7 @@ after changing anything under `lib/` or `payload/`.
 | | |
 |---|---|
 | `repro.js` | the command line |
-| `lib/` | checkout, injection, headless build, sessions and the runner |
+| `lib/` | checkout, injection, build, sessions and the runner |
 | `payload/` | the AgentBridge GML injected into every build |
 | `repros/` | your repros. Only `example.js` is tracked; the rest of the folder is gitignored |
 | `investigations/` | local notes on issues, gitignored |
@@ -125,11 +123,12 @@ by pasting it into the issue or the PR it belongs to.
 ## Setup
 
 - Windows, Node 18+, and `npm install`.
-- **Game Maker 8.0 Pro**, the exact build `lib/gm8directbuild.js` checks by
-  sha256. Set `GM8_DIR` if auto-detection does not find it.
-- **`vendor/gmksplit.exe`** (or `gmksplit.jar` with a JRE), and optionally
-  `vendor/gm8x_fix.exe`. These are third-party binaries, so they are not
-  committed. Build them from Medo42/Gmk-Splitter and skyfloogle/gm8x_fix.
+- **Game Maker 8.0's data files** (`rundata`, `dxdata`, `lib/`, `extensions/`),
+  from an install or a copy of just those. Set `GM8_DIR` if auto-detection does
+  not find them.
+- **gm8-builder**, which is not part of this repo. The release pinned in
+  `lib/gm8builder.js` is downloaded into `.cache/tools` on first use and
+  checked by sha256. To use another build of it, set `GM8_BUILDER` to its exe.
 - **An audio device and a connected desktop session.** GM8 needs both before
   any game code runs. Over RDP, turn on audio redirection, or use
   `tscon <id> /dest:console`.
