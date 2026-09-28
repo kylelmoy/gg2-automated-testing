@@ -154,8 +154,11 @@ docker run --rm --init \
   has to reap them.
 - **Game Maker's files.** Set `GM8_DIR` to a copy of GM8's data files, as on
   Windows, or set `GM8_TEMPLATE` to any GM8 build of the game. gm8-builder then
-  takes the runner, its DLL and the extensions from that exe, and no Game
-  Maker install is needed. The template is part of the build cache key.
+  takes the runner and its DLL from that exe, and no Game Maker install is
+  needed. The official release works: `Gang Garrison 2.exe` from
+  `https://www.ganggarrison.com/download.php?file=1` (v2.9.2, sha256
+  `7eb15834...d9d645`). The template is part of the build cache key. On either
+  platform, the extensions come from each commit's own `Extensions/*.gex`.
 - **The first run needs the network**, to download gm8-builder into
   `.cache/tools`. After that, `--network none` works.
 - **Another uid.** The image's Wine prefix belongs to uid 1000. Run as anyone
