@@ -8,11 +8,14 @@ Read `README.md` for what this is, and `docs/WRITING-REPROS.md` before writing a
 - **After changing `lib/` or `payload/`,** run `node test/selftest.js` (offline, a
   few seconds). Then run one real proof end to end with a repro (`repros/example.js`
   will do), against a commit that has the bug and one that has the fix.
+  If the change touches the process handling, the launcher or `linux/`, run
+  that proof on both Windows and in the `linux/` container.
 - **Only `repros/example.js` is tracked.** Other repros and investigation notes
   live in `repros/` and `investigations/` locally and are gitignored.
 - **A payload change invalidates every cached build** (the cache key hashes
-  `payload/`, `lib/payload.js`, `lib/inject.js` and the gm8-builder version), so
-  the next run of each commit rebuilds it.
+  `payload/`, `lib/payload.js`, `lib/inject.js`, the gm8-builder version and
+  the `GM8_TEMPLATE` exe if one is set), so the next run of each commit
+  rebuilds it.
 - **Payload `.gml` must be plain ASCII.** GM8 stores code a byte per
   character and gm8-builder replaces anything else; the selftest checks this.
 - **Never report PASS for a run that did not ask the question.** That is what

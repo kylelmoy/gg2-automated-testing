@@ -1,0 +1,2 @@
+# Built into a Linux image, so they must keep LF whatever core.autocrlf says.
+linux/* text eol=lf

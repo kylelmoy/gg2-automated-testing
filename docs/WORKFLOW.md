@@ -88,11 +88,12 @@ GML in the game, and the repro file itself is arbitrary Node. So:
   separate step, with a token that can only comment.
 - Use a runner that can be thrown away.
 
-**The runner needs a real desktop.** GM8 won't run properly without an
-interactive, connected Windows session. It is not yet known whether GitHub's
-hosted `windows-latest` runners provide one. Test that first. If they don't,
-use a self-hosted runner that stays logged on. A disconnected RDP session looks
-exactly like a broken build.
+**The runner needs a display and an audio device, and Linux can fake both.**
+On Windows, GM8 needs an interactive, connected session. The `linux/` container
+provides a virtual display and a null audio device under Wine instead, so a
+hosted `ubuntu-latest` runner works (README.md, "Running on Linux"). Build the
+game with `GM8_TEMPLATE` there, so that no Game Maker install has to go into
+CI.
 
 ### 4. The fix PR proves itself (exists)
 

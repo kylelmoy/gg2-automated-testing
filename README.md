@@ -108,6 +108,7 @@ after changing anything under `lib/` or `payload/`.
 | `repros/` | your repros. Only `example.js` is tracked; the rest of the folder is gitignored |
 | `investigations/` | local notes on issues, gitignored |
 | `docs/` | how to write a repro, and the issue-to-regression-test workflow |
+| `linux/` | the container for running on Linux, and `gamewatch.exe` |
 | `test/selftest.js` | offline checks of the tooling |
 
 ## Writing a repro
@@ -122,7 +123,7 @@ by pasting it into the issue or the PR it belongs to.
 
 ## Setup
 
-- Windows, Node 18+, and `npm install`.
+- Windows, Node 18+, and `npm install`. Or Linux with Docker; see "Running on Linux".
 - **Game Maker 8.0's data files** (`rundata`, `dxdata`, `lib/`, `extensions/`),
   from an install or a copy of just those. Set `GM8_DIR` if auto-detection does
   not find them.
@@ -132,6 +133,38 @@ by pasting it into the issue or the PR it belongs to.
 - **An audio device and a connected desktop session.** GM8 needs both before
   any game code runs. Over RDP, turn on audio redirection, or use
   `tscon <id> /dest:console`.
+
+## Running on Linux
+
+The game runs under Wine in a container, with a fake display and a fake audio
+device. This is what CI uses. `linux/Dockerfile` has Wine, Xvfb, a PulseAudio
+null sink, Node, and `gamewatch.exe`: the launcher's dialog clearing rewritten
+as a Win32 program, because only a Windows program can see a Wine program's
+dialogs.
+
+```bash
+docker build -t gg2-test linux
+docker run --rm --init \
+  -v "$PWD":/work -v "$PWD/../Gang-Garrison-2":/Gang-Garrison-2 \
+  -v /path/to/template.exe:/template.exe:ro -e GM8_TEMPLATE=/template.exe \
+  gg2-test node repro.js repros/example.js --broken master --fixed my-fix-branch --runs 3
+```
+
+- **`--init` is required.** The runner kills Wine processes, and something
+  has to reap them.
+- **Game Maker's files.** Set `GM8_DIR` to a copy of GM8's data files, as on
+  Windows, or set `GM8_TEMPLATE` to any GM8 build of the game. gm8-builder then
+  takes the runner, its DLL and the extensions from that exe, and no Game
+  Maker install is needed. The template is part of the build cache key.
+- **The first run needs the network**, to download gm8-builder into
+  `.cache/tools`. After that, `--network none` works.
+- **Another uid.** The image's Wine prefix belongs to uid 1000. Run as anyone
+  else (`--user`), and the entrypoint copies the prefix for that user first.
+  Git then also needs `safe.directory` for the mounted repos.
+- **Slower than Windows.** A game takes about 7s to start, against about 3s on
+  Windows, so the example repro takes about 28s a run instead of 12s. Each game
+  uses most of a core while it draws, in software. Four cores fit a server
+  and two clients.
 
 ## The bridge
 
@@ -146,7 +179,9 @@ only local connections, and one client at a time. Some details:
   left alone.
 - `lib/launcher.js` stays resident beside each game. It dismisses GM8's modal
   dialogs (runtime errors, `show_message`) and logs what they said. A GML error
-  therefore does not freeze a run, and it still reaches the report.
+  therefore does not freeze a run, and it still reaches the report. Under
+  Wine, `linux/gamewatch.exe` does the clicking and the launcher logs what it
+  reports.
 
 The bridge runs any GML it is sent, so **never let a build from `.cache/` out
 of this machine.**
