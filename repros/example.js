@@ -18,6 +18,7 @@
 // them, because the game will not let a client join the bigger team; the
 // balance itself runs through the game's own ServerBalanceTeams, both stages.
 module.exports = {
+  harness: 1,
   issue: 65,
   title: 'Autobalance notice on the host names the wrong player',
   session: { clients: 2, map: 'ctf_truefort' },

@@ -73,6 +73,20 @@ node repro.js <repro.js> --repo <built checkout>     run against an existing bui
   --runs <n>        runs per ref; use more for timing-dependent bugs
   --out <dir>       results (default .cache/results/<repro>-<time>/)
   --rebuild         ignore the build cache
+
+A ref is anything the source repo resolves (a branch, a tag, a sha), or
+pull/<n> for a pull request's head. That is fetched from the source's origin
+into the cache's own clone, never into the source repo.
+
+node issue.js <owner/repo#N>                         write an issue's repro to a file
+```
+
+Repros shared in issues travel as a fenced block tagged `js repro`. `issue.js`
+takes the most recent one in the thread back out; `--as-of <time>` ignores
+later posts and refuses a block edited since. The whole round trip:
+
+```bash
+node repro.js "$(node issue.js owner/Gang-Garrison-2#65)" --broken master --fixed pull/70
 ```
 
 Each result directory holds `report.md`, `result.json`, and a `run<N>/` folder

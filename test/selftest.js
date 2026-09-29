@@ -118,6 +118,69 @@ section('verdicts');
 }
 
 //---------------------------------------------------------------------------
+section('repros in issues');
+
+{
+  const { reproBlocks, pick, parseTarget } = require('../lib/issue.js');
+  const fence = (info, code, f = '```') => `${f}${info}\n${code}\n${f}`;
+
+  check('a js repro block', reproBlocks(`text\n${fence('js repro', 'a;')}\nmore`)[0] === 'a;');
+  check('javascript repro, ~~~, CRLF', reproBlocks(fence('javascript repro', 'b;', '~~~').replace(/\n/g, '\r\n'))[0] === 'b;');
+  check('a plain js block is not a repro', reproBlocks(fence('js', 'c;')).length === 0);
+  check('only the matching fence closes it', reproBlocks('````js repro\n```\ninner\n```\n````')[0] === '```\ninner\n```');
+  check('an indented fence loses its indent', reproBlocks('  ```js repro\n  d;\n    e;\n  ```')[0] === 'd;\n  e;');
+
+  const post = (at, body, edited) => ({ url: `u${at}`, body, createdAt: `2026-01-0${at}T00:00:00Z`, lastEditedAt: edited || null, authorAssociation: 'OWNER', author: { login: 'k' } });
+  const posts = [post(1, fence('js repro', 'first;')), post(2, 'no code'), post(3, `${fence('js repro', 'x;')}\n${fence('js repro', 'third;')}`)];
+  check('the last block of the last post that has one', pick(posts).code === 'third;\n' && pick(posts).url === 'u3');
+  check('posts after --as-of are ignored', pick(posts, '2026-01-02T12:00:00Z').code === 'first;\n');
+  let refused = '';
+  try {
+    pick([post(1, fence('js repro', 'a;'), '2026-01-05T00:00:00Z')], '2026-01-02T00:00:00Z');
+  } catch (e) {
+    refused = e.message;
+  }
+  check('a block edited after --as-of is refused', /edited after/.test(refused), refused);
+  check('an edit before --as-of is fine', pick([post(1, fence('js repro', 'a;'), '2026-01-01T12:00:00Z')], '2026-01-02T00:00:00Z').code === 'a;\n');
+  let none = '';
+  try {
+    pick([post(1, 'nothing here')]);
+  } catch (e) {
+    none = e.message;
+  }
+  check('no block is an error', /no ```js repro block/.test(none), none);
+  check('a CRLF script comes out with LFs', pick([post(1, '```js repro\r\na;\r\nb;\r\n```')]).code === 'a;\nb;\n');
+  check('the sha256 is of the script as written', pick(posts).sha256 === require('crypto').createHash('sha256').update('third;\n').digest('hex'));
+
+  const t = parseTarget('Gang-Garrison-2/Gang-Garrison-2#65');
+  check('owner/repo#N', t.owner === 'Gang-Garrison-2' && t.repo === 'Gang-Garrison-2' && t.number === 65);
+  check('a pull request URL', parseTarget('https://github.com/a/b.c/pull/7').number === 7);
+}
+
+//---------------------------------------------------------------------------
+section('harness version');
+
+{
+  const { load } = require('../lib/runner.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gg2-test-harness-'));
+  const write = (name, extra) => {
+    const f = path.join(dir, name);
+    fs.writeFileSync(f, `module.exports = { ${extra} async check() {} };\n`);
+    return f;
+  };
+  check('no harness field means 1', !!load(write('none.js', '')));
+  check('harness 1 loads', !!load(write('one.js', 'harness: 1,')));
+  let refused = '';
+  try {
+    load(write('two.js', 'harness: 2,'));
+  } catch (e) {
+    refused = e.message;
+  }
+  check('harness 2 is refused', /written for harness 2/.test(refused), refused);
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+//---------------------------------------------------------------------------
 section('gg2.ini');
 
 check('adds a section', withIniValue('', 'Settings', 'UseLobby', 0) === '[Settings]\nUseLobby=0');

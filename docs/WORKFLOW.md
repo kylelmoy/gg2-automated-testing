@@ -36,7 +36,7 @@ someone". Use it for anything that has to be true for the check to mean
 anything. Without it, a repro that silently drifts out of its scenario on a
 later commit reads as `PASS`.
 
-### 2. The repro goes in the issue (proposed)
+### 2. The repro goes in the issue (exists: `issue.js`)
 
 A repro is a single CommonJS module, so the issue carries it as a fenced block
 tagged `repro`:
@@ -62,10 +62,15 @@ Most people who report bugs won't write one, and they shouldn't have to. In
 practice a triager writes the repro from the issue text; an agent can draft it.
 The reporter's job stays the same: describe what happened.
 
-Before scripts are shared widely, repros should declare which harness API
-version they were written against (for example `harness: 1`). Committed repros
-will outlive changes to the API, so an old one must fail loudly as
-`INCONCLUSIVE` and never be reinterpreted.
+`node issue.js owner/repo#N` takes the most recent block in the thread out
+into a file for `repro.js`. With `--as-of`, set to the time a maintainer asked
+for the run, it ignores later posts and refuses a block edited since, so what
+runs is what they read. `--json` gives the comment link, the author and their
+role, and the script's sha256, for the report.
+
+Repros declare which harness API version they were written against
+(`harness: 1`). They outlive changes to the API, so the runner refuses one
+written for another version instead of reinterpreting it.
 
 ### 3. A maintainer asks a bot to confirm it (proposed)
 

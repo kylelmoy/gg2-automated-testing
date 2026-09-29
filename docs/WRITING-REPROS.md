@@ -4,6 +4,7 @@ A repro is a CommonJS module:
 
 ```js
 module.exports = {
+  harness: 1,                               // the repro API this was written for
   issue: 65,                                // optional, shown in the report
   title: 'What goes wrong, in one line',
   session: { clients: 2, map: 'ctf_truefort', seed: 1 },
@@ -16,6 +17,15 @@ module.exports = {
   async check(t) { /* make it happen, and say what should be true */ },
 };
 ```
+
+`harness` names the version of this API the repro was written for. A runner
+refuses a repro written for a version it does not implement, rather than
+guessing at what it meant. Leaving it out means 1, but a repro that goes into
+an issue should say so.
+
+To share a repro, paste it into the issue as a fenced block tagged `js repro`.
+`node issue.js owner/repo#N` takes the most recent such block in the thread
+back out into a file for `repro.js`.
 
 The rules that decide the verdict:
 
