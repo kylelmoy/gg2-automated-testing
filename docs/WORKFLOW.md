@@ -94,16 +94,24 @@ requests write). It reads what `run` uploaded as text, and executes none of
 it. Without that secret, the report is left in the run's summary instead.
 Builds never leave the runner; only logs and the report are uploaded.
 
-**Proposed: `/repro` in a comment.** Upstream's events can't reach a workflow in
-another repo, so this means polling for new comments on a schedule and
-starting the workflows above for them:
+**Exists: `/repro` in a comment.** Events in the game repo can't reach a
+workflow in this one, so **Answer /repro** (`repro-poll.yml`, `ci/poll.js`)
+polls every 10 minutes. It starts one of the workflows above for each comment
+that has a line starting `/repro`, outside code blocks, from a login in the
+`REPRO_ALLOW` variable:
 
-1. runs only when someone with write access comments `/repro`
-2. extracts the `js repro` block from the issue body, or from the comment
-3. runs `node repro.js <file> --ref master`
-4. posts `report.md` back as a comment. `report.js` already writes Markdown
-   meant for pasting into an issue as-is.
-5. labels the issue `repro-confirmed` on `REPRODUCED`
+```
+/repro                  run the thread's repro (on a pull request: prove it)
+/repro runs=5           five runs, per side for a pull request (at most 10)
+/repro ref=my-branch    on an issue: against that branch instead of master
+```
+
+The run uses the thread as of the `/repro` comment's own time, so a script
+edited after it was read is refused. The bot reacts to show it has handled a
+request: eyes when it started a run, confused when it could not parse the
+request. Those reactions are the only state it keeps. Others' `/repro`
+comments get no answer at all. Adding the `repro-confirmed` label on
+REPRODUCED is still to do.
 
 **A repro is remote code execution, by design.** `server.eval` runs arbitrary
 GML in the game, and the repro file itself is arbitrary Node. So:

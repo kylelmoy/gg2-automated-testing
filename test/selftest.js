@@ -181,6 +181,38 @@ section('CI comment');
 }
 
 //---------------------------------------------------------------------------
+section('/repro requests');
+
+{
+  const { parseRequest, plan } = require('../ci/poll.js');
+  const issue = { isPull: false };
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  check('a bare /repro', same(parseRequest('/repro', issue), { runs: null, ref: null }));
+  check('/repro on a later line, with options', same(parseRequest('Looks right to me.\r\n/repro runs=3 ref=my-fix', issue), { runs: 3, ref: 'my-fix' }));
+  check('no /repro is no request', parseRequest('please /repro this', issue) === null);
+  check('/reproduce is not /repro', parseRequest('/reproduce', issue) === null);
+  check('a /repro inside a code block is not a request', parseRequest('```js repro\n/repro\n```', issue) === null);
+  check('too many runs is an error', !!parseRequest('/repro runs=50', issue).error);
+  check('a ref on a pull request is an error', !!parseRequest('/repro ref=x', { isPull: true }).error);
+  check('a ref that looks like a flag is an error', !!parseRequest('/repro ref=--rebuild', issue).error);
+  check('an unknown word is an error', !!parseRequest('/repro please', issue).error);
+
+  const comment = (id, login, body, kind = 'issues') => ({
+    id,
+    user: { login },
+    body,
+    html_url: `https://github.com/o/r/${kind === 'issues' ? 'issues' : 'pull'}/7#issuecomment-${id}`,
+    issue_url: 'https://api.github.com/repos/o/r/issues/7',
+    created_at: '2026-01-01T00:00:00Z',
+  });
+  const comments = [comment(1, 'kyle', '/repro'), comment(2, 'stranger', '/repro'), comment(3, 'kyle', 'thanks'), comment(4, 'kyle', '/repro', 'pull')];
+  const p = plan(comments, { allow: ['kyle'], answered: new Set([4]) });
+  check('only allowed people, only unanswered requests', same(p.map((x) => x.comment.id), [1]));
+  check('the thread number comes from the issue URL', p[0].number === 7 && p[0].isPull === false);
+  check('a pull request comment is a pull request', plan([comment(5, 'kyle', '/repro', 'pull')], { allow: ['kyle'], answered: new Set() })[0].isPull);
+}
+
+//---------------------------------------------------------------------------
 section('harness version');
 
 {

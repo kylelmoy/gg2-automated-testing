@@ -1,0 +1,37 @@
+# Answer /repro comments in the game repo (TARGET_REPO) by starting "Confirm an
+# issue" or "Prove a pull request". Only logins in the REPRO_ALLOW variable
+# are answered. See ci/poll.js.
+#
+# GitHub starts scheduled runs late under load, and disables schedules in a
+# public repo after 60 days without a commit; "Run workflow" polls at once.
+
+name: Answer /repro
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: repro-poll
+
+jobs:
+  poll:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write # to start the repro workflows
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ci
+      - run: node ci/poll.js
+        env:
+          TARGET_REPO: ${{ vars.TARGET_REPO }}
+          REPRO_ALLOW: ${{ vars.REPRO_ALLOW }}
+          REPRO_BOT_TOKEN: ${{ secrets.REPRO_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          HARNESS_REF: ${{ github.ref_name }}

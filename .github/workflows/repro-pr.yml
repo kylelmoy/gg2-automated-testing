@@ -20,6 +20,10 @@ on:
         description: Game repo (default the TARGET_REPO variable)
         type: string
         default: ''
+      as_of:
+        description: Only trust the thread as of this ISO time (default when the run starts); /repro passes its comment's time
+        type: string
+        default: ''
 
 permissions: {}
 
@@ -62,3 +66,4 @@ jobs:
         git branch --force "pr-${{ inputs.pr }}-base" "$(git merge-base "${{ needs.base.outputs.branch }}" "pr-${{ inputs.pr }}")"
       args: --broken pr-${{ inputs.pr }}-base --fixed pr-${{ inputs.pr }}
       runs: ${{ fromJSON(inputs.runs) }}
+      as_of: ${{ inputs.as_of }}
