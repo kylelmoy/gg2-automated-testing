@@ -54,11 +54,11 @@ jobs:
     secrets: inherit
     with:
       repo: ${{ inputs.repo || vars.TARGET_REPO }}
-      thread: ${{ inputs.pr }}
+      thread: ${{ fromJSON(inputs.pr) }}
       # pr-N is the pull request's head; pr-N-base is where it branched from
       # its base, so the broken side has exactly the code the fix was made on.
       setup: |
         git fetch --quiet origin "+refs/pull/${{ inputs.pr }}/head:refs/heads/pr-${{ inputs.pr }}"
         git branch --force "pr-${{ inputs.pr }}-base" "$(git merge-base "${{ needs.base.outputs.branch }}" "pr-${{ inputs.pr }}")"
       args: --broken pr-${{ inputs.pr }}-base --fixed pr-${{ inputs.pr }}
-      runs: ${{ inputs.runs }}
+      runs: ${{ fromJSON(inputs.runs) }}

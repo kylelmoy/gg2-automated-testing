@@ -37,6 +37,6 @@ jobs:
     secrets: inherit
     with:
       repo: ${{ inputs.repo || vars.TARGET_REPO }}
-      thread: ${{ inputs.issue }}
+      thread: ${{ fromJSON(inputs.issue) }}
       args: --ref ${{ inputs.ref }}
-      runs: ${{ inputs.runs }}
+      runs: ${{ fromJSON(inputs.runs) }}
