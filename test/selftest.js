@@ -177,7 +177,53 @@ section('CI comment');
   put('results/report.md', 'x'.repeat(70000));
   const long = compose(dir);
   check('a long report is cut to fit a comment', long.length < 61000 && /truncated/.test(long));
+
+  const { outcome, markersIn } = require('../ci/comment.js');
+  check('no result is FAILED', outcome(dir) === 'FAILED');
+  const result = (results, proof) => put('results/result.json', JSON.stringify({ results, proof }));
+  result([{ reproduced: 1, inconclusive: 0, passed: 0 }]);
+  check('a reproduction is REPRODUCED', outcome(dir) === 'REPRODUCED');
+  result([{ reproduced: 0, inconclusive: 1, passed: 0 }]);
+  check('an inconclusive run is INCONCLUSIVE, not PASS', outcome(dir) === 'INCONCLUSIVE');
+  result([{ reproduced: 0, inconclusive: 0, passed: 1 }]);
+  check('all passing is PASS', outcome(dir) === 'PASS');
+  result([{}, {}], { proven: false });
+  check('a failed proof is NOT PROVEN', outcome(dir) === 'NOT PROVEN');
+
+  put('meta.json', JSON.stringify({ asOf: '2026-01-01T00:00:00Z' }));
+  const marks = markersIn(compose(dir, { kind: 'confirm' }));
+  check('the marker reads back', marks.length === 1 && marks[0].kind === 'confirm' && marks[0].sha256 === 'ab'.repeat(32) && marks[0].asOf === '2026-01-01T00:00:00Z');
+  check('a marker cannot close its HTML comment early', markersIn(compose(dir, { kind: 'x-->y' }))[0].kind === 'x-->y' && !/x-->y/.test(compose(dir, { kind: 'x-->y' })));
   fs.rmSync(dir, { recursive: true, force: true });
+}
+
+//---------------------------------------------------------------------------
+section('nightly sweep');
+
+{
+  const { nightlyLead } = require('../ci/post.js');
+  const { approval } = require('../ci/sweep.js');
+  const say = (state, outcome, last) => nightlyLead({ state, outcome, last });
+  check('open and reproducing: nothing to say', say('open', 'REPRODUCED', null) === null);
+  check('closed and passing: nothing to say', say('closed', 'PASS', null) === null);
+  check('closed and reproducing is a regression', /regression/.test(say('closed', 'REPRODUCED', null)));
+  check('a regression already reported is not repeated', say('closed', 'REPRODUCED', 'REPRODUCED') === null);
+  check('open and passing is news', /passes now/.test(say('open', 'PASS', null)));
+  check('no verdict is news', /no answer \(FAILED\)/.test(say('open', 'FAILED', 'REPRODUCED')));
+  check('back to expected after a report is news', /back to expected/.test(say('closed', 'PASS', 'REPRODUCED')));
+
+  const mark = (data) => `report\n<!-- gg2-repro ${JSON.stringify(data)} -->`;
+  const sha = (c) => c.repeat(64);
+  const comments = [
+    { user: { login: 'bot' }, body: mark({ kind: 'confirm', sha256: sha('a'), asOf: 't1' }) },
+    { user: { login: 'bot' }, body: mark({ kind: 'nightly', sha256: sha('a'), asOf: 't1' }) },
+    { user: { login: 'someone' }, body: mark({ kind: 'confirm', sha256: sha('e'), asOf: 't9' }) },
+    { user: { login: 'bot' }, body: mark({ kind: 'confirm', sha256: sha('b'), asOf: 't2' }) },
+    { user: { login: 'bot' }, body: mark({ kind: 'prove', sha256: sha('c'), asOf: 't3' }) },
+  ];
+  const a = approval(comments, 'bot');
+  check("the approval is the bot's latest confirm", a && a.sha256 === sha('b') && a.asOf === 't2', JSON.stringify(a));
+  check("someone else's marker approves nothing", approval([comments[2]], 'bot') === null);
 }
 
 //---------------------------------------------------------------------------

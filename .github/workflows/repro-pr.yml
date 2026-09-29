@@ -67,3 +67,4 @@ jobs:
       args: --broken pr-${{ inputs.pr }}-base --fixed pr-${{ inputs.pr }}
       runs: ${{ fromJSON(inputs.runs) }}
       as_of: ${{ inputs.as_of }}
+      kind: prove

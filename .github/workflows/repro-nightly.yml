@@ -1,0 +1,57 @@
+# Every night, run each repro-confirmed issue's approved repro against the
+# game's default branch. An open issue should still reproduce and a closed
+# one should pass; the issue hears about it only when that changes (a closed
+# issue reproducing again, an open one passing, a repro that no longer runs,
+# or a return to normal). ci/sweep.js picks the issues and scripts, and
+# ci/post.js decides what to say.
+
+name: Nightly sweep
+
+on:
+  schedule:
+    - cron: '23 7 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: repro-nightly
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ci
+      - id: plan
+        run: node ci/sweep.js
+        env:
+          TARGET_REPO: ${{ vars.TARGET_REPO }}
+          REPRO_BOT_TOKEN: ${{ secrets.REPRO_BOT_TOKEN }}
+
+  sweep:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/repro.yml
+    secrets: inherit
+    with:
+      repo: ${{ vars.TARGET_REPO }}
+      thread: ${{ matrix.issue }}
+      args: --ref ${{ matrix.branch }}
+      as_of: ${{ matrix.as_of }}
+      sha256: ${{ matrix.sha256 }}
+      kind: nightly

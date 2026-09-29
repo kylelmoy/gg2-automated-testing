@@ -1,11 +1,16 @@
 # Run a repro from a GitHub thread against the game, and post the report back.
-# Called by repro-issue.yml and repro-pr.yml; see docs/WORKFLOW.md.
+# Called by repro-issue.yml, repro-pr.yml and repro-nightly.yml; see
+# docs/WORKFLOW.md.
 #
 # Two jobs, because a repro is arbitrary code:
 #   run   takes the script out of the thread, builds, and runs it in the linux/
 #         container with no network. It has no secrets and a read-only token.
 #   post  holds the token that can comment. It only reads what run uploaded,
-#         as text, and executes none of it.
+#         as text, and executes none of it (ci/post.js).
+#
+# In the container the harness is read-only, and only the build cache and the
+# results folder are writable, so the files post trusts - source.json and
+# meta.json - are written by the host alone.
 
 name: repro (reusable)
 
@@ -35,6 +40,14 @@ on:
         description: ignore posts after this ISO time, and refuse a script edited since (default the start of the run)
         type: string
         default: ''
+      sha256:
+        description: run only if the script has exactly this hash (the nightly sweep pins approved scripts)
+        type: string
+        default: ''
+      kind:
+        description: confirm, prove or nightly - what post says, and when (ci/post.js)
+        type: string
+        default: confirm
 
 permissions: {}
 
@@ -54,12 +67,19 @@ jobs:
           REPO: ${{ inputs.repo }}
           THREAD: ${{ inputs.thread }}
           AS_OF: ${{ inputs.as_of }}
+          SHA256: ${{ inputs.sha256 }}
         run: |
           mkdir -p out
           as_of="${AS_OF:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
           echo "as_of=$as_of" >> "$GITHUB_OUTPUT"
           if node issue.js "$REPO#$THREAD" --as-of "$as_of" --out out/repro.js --json > out/source.json 2> out/extract.err; then
             cat out/source.json
+            got="$(jq -r .sha256 out/source.json)"
+            if [ -n "$SHA256" ] && [ "$got" != "$SHA256" ]; then
+              echo "the script in the thread (sha256 ${got:0:12}) is not the one approved (${SHA256:0:12}); ask for it again with /repro" | tee out/extract.err
+              rm -f out/source.json
+              echo "failed=true" >> "$GITHUB_OUTPUT"
+            fi
           else
             cat out/extract.err
             rm -f out/source.json
@@ -108,14 +128,16 @@ jobs:
           RUNS: ${{ inputs.runs }}
         run: |
           set +e
+          mkdir -p cache out/results
           # shellcheck disable=SC2086 # ARGS is a word list by design
           docker run --rm --init --network none \
             --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges \
             --memory 12g --pids-limit 4096 \
-            -v "$PWD":/work -v "$PWD/game":/Gang-Garrison-2:ro \
+            -v "$PWD":/work:ro -v "$PWD/cache":/cache -e GG2_TEST_CACHE=/cache -v "$PWD/out/results":/results \
+            -v "$PWD/game":/Gang-Garrison-2:ro \
             -v "$PWD/template/Gang Garrison 2.exe":/template.exe:ro -e GM8_TEMPLATE=/template.exe \
             -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
-            gg2-test timeout 40m node repro.js out/repro.js $ARGS --runs "$RUNS" --out out/results
+            gg2-test timeout 40m node repro.js out/repro.js $ARGS --runs "$RUNS" --out /results
           echo "$?" > out/exit-code
 
       - name: Package what the post job reads
@@ -161,16 +183,10 @@ jobs:
         with:
           name: repro
           path: run
-      - name: Compose the comment
-        run: node ci/comment.js run > comment.md && cat comment.md >> "$GITHUB_STEP_SUMMARY"
-      - name: Post it
+      - name: Post
         env:
-          GH_TOKEN: ${{ secrets.REPRO_BOT_TOKEN }}
+          REPRO_BOT_TOKEN: ${{ secrets.REPRO_BOT_TOKEN }}
+          KIND: ${{ inputs.kind }}
           REPO: ${{ inputs.repo }}
           THREAD: ${{ inputs.thread }}
-        run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::No REPRO_BOT_TOKEN secret, so the report is only in this run's summary."
-            exit 0
-          fi
-          gh issue comment "$THREAD" --repo "$REPO" --body-file comment.md
+        run: node ci/post.js run

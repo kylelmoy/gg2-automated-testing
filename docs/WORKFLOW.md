@@ -110,8 +110,8 @@ The run uses the thread as of the `/repro` comment's own time, so a script
 edited after it was read is refused. The bot reacts to show it has handled a
 request: eyes when it started a run, confused when it could not parse the
 request. Those reactions are the only state it keeps. Others' `/repro`
-comments get no answer at all. Adding the `repro-confirmed` label on
-REPRODUCED is still to do.
+comments get no answer at all. An issue whose repro reproduces gets the
+`repro-confirmed` label, which puts it in the nightly sweep (step 5).
 
 **A repro is remote code execution, by design.** `server.eval` runs arbitrary
 GML in the game, and the repro file itself is arbitrary Node. So:
@@ -144,23 +144,32 @@ could fail at all.
 The repro is named `<issue>-<slug>.js`. This repo does not track repros (only
 `repros/example.js`), so where the kept ones live is part of step 5.
 
-### 5. The corpus runs on its own (proposed)
+### 5. The corpus runs on its own (exists)
 
-Upstream may never want test infrastructure in the game repo, and it doesn't
-need to, and the corpus need not live in this repo either. This repo already
-builds any commit in its own cache (`lib/checkout.js`) without touching the
-source checkout. So:
+The corpus is the issues themselves: every issue labelled `repro-confirmed`.
+**Nightly sweep** (`repro-nightly.yml`) runs each one's repro against the game
+repo's default branch every night, once:
 
-- **Nightly:** run every repro in the corpus against upstream `master`. Every
-  committed repro should be `PASS`. If one turns `REPRODUCED`, that's a
-  regression, and the report names it.
-- **On demand:** a `workflow_dispatch` that takes an upstream PR ref and runs
-  the corpus against it. A maintainer triggers it and posts the report on the
-  PR.
-- **A repro for an unfixed bug** can be committed before its fix, marked as
-  expected to reproduce (proposed field: `open: true`). The nightly run then
-  flags it when it *starts passing*, which tells you a bug was fixed by
-  accident. That's pytest's `xfail` with strict mode.
+| issue | should | when it doesn't, the issue hears |
+|---|---|---|
+| open | REPRODUCE | "passes now": fixed by accident? |
+| closed | PASS | "regression": it reproduces again |
+
+A repro that no longer reaches a verdict is reported too. The sweep comments
+only when the outcome is unexpected and differs from what its last comment
+said, or when things are back to expected after one, so an ongoing
+regression is reported once, not every night.
+
+**The sweep runs only scripts a maintainer approved.** Anyone can post a new
+`js repro` block into a labelled issue, so the sweep never takes the latest
+one. Every report the bot posts ends in a hidden marker with the script's
+sha256 and the time it was taken as of (`ci/comment.js`). The sweep finds the
+bot's latest confirm report on the issue (`ci/sweep.js`), takes the thread as
+of that time again, and refuses to run unless the script's hash matches. A
+block that was edited after it was approved therefore can't be run. The
+issue is told the repro needs asking for again with `/repro`.
+
+To take an issue out of the sweep, remove the label.
 
 ### 6. Bisect (proposed)
 

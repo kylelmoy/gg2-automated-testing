@@ -26,6 +26,8 @@
 // grammar above, and nothing in them reaches a shell.
 //=============================================================================
 
+const { api, all, env } = require('./github.js');
+
 const LOOKBACK_MS = 2 * 24 * 3600 * 1000;
 const MAX_RUNS = 10;
 
@@ -66,26 +68,7 @@ function plan(comments, { allow, answered }) {
   return out;
 }
 
-async function api(token, method, url, body) {
-  const res = await fetch(url.startsWith('http') ? url : `https://api.github.com${url}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'gg2-automated-testing',
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) throw new Error(`${method} ${url}: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
-  return res.status === 204 ? null : res.json();
-}
-
 async function main() {
-  const env = (name) => {
-    if (!process.env[name]) throw new Error(`${name} is not set`);
-    return process.env[name];
-  };
   const target = env('TARGET_REPO');
   const bot = env('REPRO_BOT_TOKEN');
   const harness = env('GITHUB_REPOSITORY');
@@ -99,12 +82,7 @@ async function main() {
 
   const me = (await api(bot, 'GET', '/user')).login;
   const since = new Date(Date.now() - LOOKBACK_MS).toISOString();
-  const comments = [];
-  for (let page = 1; ; page++) {
-    const batch = await api(bot, 'GET', `/repos/${target}/issues/comments?since=${since}&sort=created&direction=asc&per_page=100&page=${page}`);
-    comments.push(...batch);
-    if (batch.length < 100) break;
-  }
+  const comments = await all(bot, `/repos/${target}/issues/comments?since=${since}&sort=created&direction=asc`);
 
   // Only the candidates' reactions are worth fetching.
   const candidates = plan(comments, { allow, answered: new Set() });
