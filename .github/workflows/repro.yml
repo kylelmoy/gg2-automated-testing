@@ -92,6 +92,8 @@ jobs:
         if: steps.extract.outputs.failed != 'true'
       - uses: docker/build-push-action@v6
         if: steps.extract.outputs.failed != 'true'
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
         with:
           context: linux
           tags: gg2-test
