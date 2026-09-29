@@ -1,0 +1,42 @@
+# Confirm an issue: run its repro against a branch of the game, and post the
+# report on the issue. Read the script in the issue before starting this: it
+# runs whatever the thread's latest ```js repro block says.
+
+name: Confirm an issue
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number
+        type: number
+        required: true
+      ref:
+        description: Branch, tag or sha of the game to run against
+        type: string
+        default: master
+      runs:
+        description: Runs
+        type: number
+        default: 1
+      repo:
+        description: Game repo (default the TARGET_REPO variable)
+        type: string
+        default: ''
+
+permissions: {}
+
+concurrency:
+  group: repro-${{ inputs.repo || vars.TARGET_REPO }}-${{ inputs.issue }}
+
+jobs:
+  repro:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/repro.yml
+    secrets: inherit
+    with:
+      repo: ${{ inputs.repo || vars.TARGET_REPO }}
+      thread: ${{ inputs.issue }}
+      args: --ref ${{ inputs.ref }}
+      runs: ${{ inputs.runs }}

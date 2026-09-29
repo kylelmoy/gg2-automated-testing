@@ -158,6 +158,29 @@ section('repros in issues');
 }
 
 //---------------------------------------------------------------------------
+section('CI comment');
+
+{
+  const { compose } = require('../ci/comment.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gg2-test-comment-'));
+  const put = (name, text) => {
+    fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
+    fs.writeFileSync(path.join(dir, name), text);
+  };
+  put('meta.json', JSON.stringify({ runUrl: 'https://run', extractError: 'issue.js: no ```js repro block in the thread' }));
+  check('no script says why', /Could not take a repro.*no ```js repro block/.test(compose(dir)), compose(dir));
+
+  put('source.json', JSON.stringify({ from: 1, url: 'https://issue', author: 'k', sha256: 'ab'.repeat(32) }));
+  put('meta.json', JSON.stringify({ runUrl: 'https://run', exitCode: 2 }));
+  check('a failed run says it reached no verdict', /before it reached a verdict \(exit code 2\)/.test(compose(dir)), compose(dir));
+
+  put('results/report.md', 'x'.repeat(70000));
+  const long = compose(dir);
+  check('a long report is cut to fit a comment', long.length < 61000 && /truncated/.test(long));
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+//---------------------------------------------------------------------------
 section('harness version');
 
 {

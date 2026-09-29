@@ -1,0 +1,64 @@
+# Prove a fix: run the repro against the commit a pull request branched from
+# and against the pull request's head, and post the proof on the pull request.
+# The repro is the latest ```js repro block in the pull request's thread, or
+# else in the issue it closes. Read it before starting this.
+
+name: Prove a pull request
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        type: number
+        required: true
+      runs:
+        description: Runs on each side
+        type: number
+        default: 3
+      repo:
+        description: Game repo (default the TARGET_REPO variable)
+        type: string
+        default: ''
+
+permissions: {}
+
+concurrency:
+  group: repro-${{ inputs.repo || vars.TARGET_REPO }}-${{ inputs.pr }}
+
+jobs:
+  base:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      branch: ${{ steps.pr.outputs.branch }}
+    steps:
+      - id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ inputs.repo || vars.TARGET_REPO }}
+          PR: ${{ inputs.pr }}
+        run: |
+          branch="$(gh pr view "$PR" --repo "$REPO" --json baseRefName --jq .baseRefName)"
+          # It goes into a shell command in the next job; a branch name can hold
+          # characters that would matter there.
+          [[ "$branch" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "unexpected base branch name: $branch"; exit 1; }
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+  repro:
+    needs: base
+    permissions:
+      contents: read
+    uses: ./.github/workflows/repro.yml
+    secrets: inherit
+    with:
+      repo: ${{ inputs.repo || vars.TARGET_REPO }}
+      thread: ${{ inputs.pr }}
+      # pr-N is the pull request's head; pr-N-base is where it branched from
+      # its base, so the broken side has exactly the code the fix was made on.
+      setup: |
+        git fetch --quiet origin "+refs/pull/${{ inputs.pr }}/head:refs/heads/pr-${{ inputs.pr }}"
+        git branch --force "pr-${{ inputs.pr }}-base" "$(git merge-base "${{ needs.base.outputs.branch }}" "pr-${{ inputs.pr }}")"
+      args: --broken pr-${{ inputs.pr }}-base --fixed pr-${{ inputs.pr }}
+      runs: ${{ inputs.runs }}

@@ -72,9 +72,31 @@ Repros declare which harness API version they were written against
 (`harness: 1`). They outlive changes to the API, so the runner refuses one
 written for another version instead of reinterpreting it.
 
-### 3. A maintainer asks a bot to confirm it (proposed)
+### 3. A maintainer asks a bot to confirm it (by hand: exists; `/repro`: proposed)
 
-A GitHub Action on `issue_comment`:
+**Exists: two workflows you start by hand** in this repo's Actions tab. Each
+takes the latest `js repro` block from a thread of the game repo named by the
+`TARGET_REPO` variable (or the `repo` input), runs it on a hosted Linux runner,
+and posts the report back to that thread.
+
+- **Confirm an issue** (`repro-issue.yml`): the issue's repro against a branch,
+  `master` by default.
+- **Prove a pull request** (`repro-pr.yml`): against the commit the pull
+  request branched from, and its head (`--broken pr-N-base --fixed pr-N`). The
+  repro comes from the pull request's thread, or else from the issue it closes.
+
+Both call `repro.yml`, which is two jobs. `run` takes the script out of the
+thread, as of the moment the workflow started, and runs it in the `linux/`
+container with no network, no secrets, no capabilities and a read-only copy of
+the game repo. `post` holds the only token that can comment
+(`REPRO_BOT_TOKEN`: a fine-grained token for the game repo with Issues and Pull
+requests write). It reads what `run` uploaded as text, and executes none of
+it. Without that secret, the report is left in the run's summary instead.
+Builds never leave the runner; only logs and the report are uploaded.
+
+**Proposed: `/repro` in a comment.** Upstream's events can't reach a workflow in
+another repo, so this means polling for new comments on a schedule and
+starting the workflows above for them:
 
 1. runs only when someone with write access comments `/repro`
 2. extracts the `js repro` block from the issue body, or from the comment
